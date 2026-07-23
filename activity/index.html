@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Virtual Avatar</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        height: 100vh;
+        overflow: hidden;
+        background: #1e1f22;
+        color: #dbdee1;
+        font-family: system-ui, sans-serif;
+      }
+      #stage { position: fixed; inset: 0; }
+      #stage canvas { display: block; }
+
+      #status {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        line-height: 1.7;
+        pointer-events: none;
+      }
+      #status.hidden { display: none; }
+      .warn { color: #f0b232; }
+
+      #panel {
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        padding: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: center;
+        background: linear-gradient(transparent, #1e1f22cc 40%);
+      }
+      #panel.hidden { display: none; }
+      button {
+        background: #2b2d31;
+        color: #dbdee1;
+        border: 1px solid #3f4147;
+        border-radius: 6px;
+        padding: 5px 11px;
+        font-size: 0.8rem;
+        cursor: pointer;
+      }
+      button:hover { background: #35373c; }
+      button[aria-pressed="true"] { background: #5865f2; border-color: #5865f2; color: #fff; }
+      .sep { width: 100%; height: 0; }
+
+      /* 아바타 자막 — 백엔드의 speak 메시지를 표시한다 */
+      #speech {
+        position: fixed;
+        left: 50%;
+        bottom: 27%;
+        transform: translateX(-50%);
+        max-width: min(560px, 80vw);
+        padding: 9px 15px;
+        border-radius: 12px;
+        background: #111214d9;
+        border: 1px solid #3f4147;
+        line-height: 1.6;
+        opacity: 0;
+        transition: opacity 0.25s;
+        pointer-events: none;
+        z-index: 6;
+      }
+      #speech.show { opacity: 1; }
+
+      /* 생각 풍선 — 자막과 구별되는 조용한 스타일 (음성 없는 혼잣말) */
+      #thought {
+        position: fixed;
+        left: 50%;
+        bottom: 42%;
+        transform: translateX(-50%);
+        max-width: min(420px, 70vw);
+        padding: 7px 14px;
+        border-radius: 16px;
+        background: #2b2d3199;
+        border: 1px dashed #6d6f78;
+        color: #b5b9c0;
+        font-style: italic;
+        font-size: 0.9rem;
+        line-height: 1.5;
+        text-align: center;
+        opacity: 0;
+        transition: opacity 0.4s;
+        pointer-events: none;
+        z-index: 5;
+      }
+      #thought::before { content: "💭 "; font-style: normal; }
+      #thought.show { opacity: 1; }
+
+      #ask {
+        display: flex;
+        width: min(480px, 90%);
+        gap: 6px;
+        margin-bottom: 4px;
+      }
+      #ask input {
+        flex: 1;
+        background: #1e1f22;
+        color: #dbdee1;
+        border: 1px solid #3f4147;
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 0.85rem;
+      }
+      #ask input:focus { outline: 1px solid #5865f2; }
+
+      /* 볼륨 컨트롤 (디스코드 스타일: 호버 시 세로 슬라이더 팝업) */
+      #vol { position: relative; display: inline-flex; margin-bottom: 4px; }
+      #vol-icon {
+        padding: 5px 9px;
+        font-size: 1.05rem;
+        line-height: 1;
+      }
+      #vol-pop {
+        position: absolute;
+        bottom: calc(100% + 6px);
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        padding: 12px 8px;
+        background: #111214f2;
+        border: 1px solid #3f4147;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px #0007;
+        z-index: 10;
+      }
+      /* 아이콘·팝업 어느 쪽에 호버해도 유지 (팝업으로 마우스 이동 가능) */
+      #vol:hover #vol-pop, #vol-pop:hover { display: block; }
+      /* 버튼과 팝업 사이 6px 틈을 투명 브리지로 메운다 — 틈을 지날 때 버튼·팝업
+         어느 쪽도 호버가 아니라 팝업이 닫히던 문제. 브리지는 팝업의 일부라
+         호버가 이어진다. (pointer-events 명시 — 부모가 꺼도 브리지는 살아있게) */
+      #vol-pop::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 0; right: 0;
+        height: 9px;
+        pointer-events: auto;
+      }
+      #vol-pop input[type="range"] {
+        writing-mode: vertical-lr;   /* 세로 슬라이더 (아래=작게, 위=크게) */
+        direction: rtl;
+        width: 6px;
+        height: 110px;
+        accent-color: #5865f2;
+        cursor: pointer;
+      }
+
+      /* 자동재생 정책상 첫 소리 전에 클릭이 한 번 필요하다 */
+      #gate {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: grid;
+        place-items: center;
+        background: #1e1f22cc;
+        cursor: pointer;
+        font-size: 0.95rem;
+      }
+      #gate.hidden { display: none; }
+
+      #conn {
+        position: fixed;
+        top: 8px; right: 46px;
+        font-size: 0.65rem;
+        color: #f23f43;
+        pointer-events: none;
+      }
+      #conn.ok { color: #23a55a; }
+
+      #meta {
+        position: fixed;
+        top: 8px; left: 8px;
+        font-family: ui-monospace, monospace;
+        font-size: 0.65rem;
+        color: #6d6f78;
+        line-height: 1.5;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="meta"></div>
+    <div id="conn">● 연결 끊김</div>
+    <div id="speech"></div>
+    <div id="thought"></div>
+    <div id="gate" class="hidden">화면을 클릭하면 소리가 켜집니다</div>
+    <div id="status">불러오는 중…</div>
+    <div id="panel" class="hidden"></div>
+    <script type="module" src="/src/main.js?v=2"></script>
+  </body>
+</html>

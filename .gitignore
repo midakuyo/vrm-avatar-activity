@@ -1,0 +1,14 @@
+node_modules/
+.env
+persona.md
+.claude/settings.local.json
+
+# VRM 모델은 커밋하지 않는다 (용량 + 라이선스). scripts/fetch-sample-model.sh 참고
+*.vrm
+activity/public/models/anim/*.fbx
+dist/
+*.log
+.DS_Store
+
+# 기억 데이터 (대화 내용·개인정보)
+data/
